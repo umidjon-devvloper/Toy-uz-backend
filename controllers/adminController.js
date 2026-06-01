@@ -16,7 +16,7 @@ const genPassword = () => {
 // POST /api/admin/venues
 export const createVenue = async (req, res) => {
   try {
-    const { name, login, password, pricePerInvitation, phone, address, status } = req.body;
+    const { name, login, password, pricePerInvitation, phone, address, mapLink, status } = req.body;
 
     if (!name || !login) {
       return res.status(400).json({ message: "To'yxona nomi va login majburiy" });
@@ -34,6 +34,7 @@ export const createVenue = async (req, res) => {
       pricePerInvitation: pricePerInvitation || 200000,
       phone: phone || "",
       address: address || "",
+      mapLink: mapLink || "",
       status: status || "active",
     });
 
@@ -92,7 +93,7 @@ export const getVenues = async (req, res) => {
 // PUT /api/admin/venues/:id
 export const updateVenue = async (req, res) => {
   try {
-    const { name, pricePerInvitation, phone, address, status, newPassword, telegramChatId } = req.body;
+    const { name, pricePerInvitation, phone, address, mapLink, status, newPassword, telegramChatId } = req.body;
     const venue = await Venue.findById(req.params.id);
     if (!venue) return res.status(404).json({ message: "To'yxona topilmadi" });
 
@@ -100,6 +101,7 @@ export const updateVenue = async (req, res) => {
     if (pricePerInvitation !== undefined) venue.pricePerInvitation = pricePerInvitation;
     if (phone !== undefined) venue.phone = phone;
     if (address !== undefined) venue.address = address;
+    if (mapLink !== undefined) venue.mapLink = mapLink;
     if (status !== undefined) venue.status = status;
     if (telegramChatId !== undefined) venue.telegramChatId = telegramChatId; // qo'lda ulash/uzish
     await venue.save();
@@ -318,6 +320,48 @@ export const rejectInvitation = async (req, res) => {
     emitToSuperAdmins("invitation:updated", { id: inv._id, acceptStatus: "rejected" });
 
     res.json({ message: "Taklifnoma rad etildi", invitation: inv });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ============ BITTA TAKLIFNOMA (superadmin to'liq tahrir uchun) ============
+// GET /api/admin/invitations/:id
+export const getInvitationById = async (req, res) => {
+  try {
+    const inv = await Invitation.findById(req.params.id)
+      .populate("venue", "name phone")
+      .populate("design", "key name preview")
+      .populate("music", "name url");
+    if (!inv) return res.status(404).json({ message: "Taklifnoma topilmadi" });
+    res.json(inv);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ============ TAKLIFNOMANI TO'LIQ TAHRIRLASH (faqat superadmin) ============
+// PUT /api/admin/invitations/:id
+// Superadmin istalgan maydonni tahrirlay oladi (to'yxonaning bir martalik cheklovi tegmaydi).
+export const adminUpdateInvitation = async (req, res) => {
+  try {
+    const inv = await Invitation.findById(req.params.id);
+    if (!inv) return res.status(404).json({ message: "Taklifnoma topilmadi" });
+
+    const fields = [
+      "groomName", "brideName", "weddingDate", "weddingTime", "venueName",
+      "address", "mapLink", "images", "description", "template", "design", "music",
+    ];
+    fields.forEach((f) => {
+      if (req.body[f] === undefined) return;
+      if (f === "design" || f === "music") inv[f] = req.body[f] || null;
+      else inv[f] = req.body[f];
+    });
+    await inv.save();
+
+    // To'yxona panelini ham jonli yangilaymiz
+    emitToVenue(inv.venue, "invitation:updated", { id: inv._id });
+    res.json({ message: "Taklifnoma yangilandi", invitation: inv });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

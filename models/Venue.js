@@ -7,7 +7,8 @@ const venueSchema = new mongoose.Schema(
     admin: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null }, // Biriktirilgan admin
     status: { type: String, enum: ["active", "inactive"], default: "active" },
     phone: { type: String, default: "" },
-    address: { type: String, default: "" },
+    address: { type: String, default: "" }, // Lokatsiya nomi / manzil matni
+    mapLink: { type: String, default: "" }, // Google karta havolasi
     note: { type: String, default: "" },
 
     // Telegram bot integratsiyasi:

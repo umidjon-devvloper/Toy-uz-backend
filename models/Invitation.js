@@ -15,7 +15,12 @@ const invitationSchema = new mongoose.Schema(
     mapLink: { type: String, default: "" }, // Google Map havolasi
     images: [{ type: String }], // Rasmlar (Firebase URL)
     description: { type: String, default: "" }, // Batafsil ma'lumot / matn (to'yxona yozadi)
-    template: { type: String, default: "classic" }, // Taklifnoma dizayni
+    template: { type: String, default: "classic" }, // (eski) qotirilgan shablon kaliti — orqaga moslik uchun
+    design: { type: mongoose.Schema.Types.ObjectId, ref: "Design", default: null }, // Tanlangan dizayn (DB)
+    music: { type: mongoose.Schema.Types.ObjectId, ref: "Music", default: null }, // Tanlangan fon musiqasi
+
+    // To'yxona admin yuborilgan taklifnomani faqat BIR MARTA (ism + soat) tahrirlay oladi.
+    venueEditUsed: { type: Boolean, default: false },
 
     // HISOB-KITOB UCHUN MUHIM:
     // draft = qoralama (hisobga olinmaydi)

@@ -8,7 +8,10 @@ let bot = null;
 const awaitingLogin = new Set();
 
 const clientUrl = () => ((process.env.CLIENT_URL || "http://localhost:5173").split(",")[0] || "").trim().replace(/\/$/, "");
-const inviteUrl = (id) => `${clientUrl()}/i/${id}`;
+// Taklifnoma havolasi — backend OG sahifasiga ishora qiladi (Telegram og:image/og:title o'qiydi),
+// odam ochsa SPA'ga yo'naltiriladi. SHARE_BASE_URL bo'lmasa frontend manzili ishlatiladi.
+const shareBase = () => ((process.env.SHARE_BASE_URL || "").trim().replace(/\/$/, "") || clientUrl());
+const inviteUrl = (id) => `${shareBase()}/i/${id}`;
 
 // WebApp (Mini App) manzili — Telegram faqat HTTPS qabul qiladi
 const webAppUrl = () => {

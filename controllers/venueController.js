@@ -1,5 +1,7 @@
 import Invitation from "../models/Invitation.js";
 import Venue from "../models/Venue.js";
+import "../models/Design.js"; // populate("design")
+import "../models/Music.js"; // populate("music")
 import { emitToSuperAdmins } from "../config/socket.js";
 
 // ============ TO'YXONA ADMIN DASHBOARD ============
@@ -41,6 +43,17 @@ export const myInvitations = async (req, res) => {
 export const createInvitation = async (req, res) => {
   try {
     const data = { ...req.body, venue: req.user.venue, createdBy: req.user._id, status: "draft" };
+    if (!data.design) delete data.design; // bo'sh string ObjectId cast xatosini oldini olish
+    if (!data.music) delete data.music;
+
+    // Joylashuv to'yxona darajasidan meros (to'yxona admin alohida kiritmaydi)
+    const venue = await Venue.findById(req.user.venue);
+    if (venue) {
+      if (!data.venueName) data.venueName = venue.name || "";
+      if (!data.address) data.address = venue.address || "";
+      if (!data.mapLink) data.mapLink = venue.mapLink || "";
+    }
+
     const inv = await Invitation.create(data);
     res.status(201).json(inv);
   } catch (error) {
@@ -50,15 +63,44 @@ export const createInvitation = async (req, res) => {
 
 // ============ TAKLIFNOMANI TAHRIRLASH ============
 // PUT /api/venue/invitations/:id
+//  • Qoralama (draft) — to'liq tahrir, cheklovsiz.
+//  • Yuborilgan (sent) — faqat ism (kuyov/kelin) va soat, va faqat BIR MARTA.
 export const updateInvitation = async (req, res) => {
   try {
     const inv = await Invitation.findOne({ _id: req.params.id, venue: req.user.venue });
     if (!inv) return res.status(404).json({ message: "Topilmadi" });
-    // Yuborilgan taklifnomaning narxi/statusiga tegmaymiz, faqat ma'lumotlar
-    const fields = ["groomName", "brideName", "weddingDate", "weddingTime", "venueName", "address", "mapLink", "images", "description", "template"];
-    fields.forEach((f) => {
-      if (req.body[f] !== undefined) inv[f] = req.body[f];
+
+    if (inv.status === "draft") {
+      // Qoralama — barcha maydonlar
+      const fields = [
+        "groomName", "brideName", "weddingDate", "weddingTime", "venueName",
+        "address", "mapLink", "images", "description", "template", "design", "music",
+      ];
+      fields.forEach((f) => {
+        if (req.body[f] === undefined) return;
+        if (f === "design" || f === "music") inv[f] = req.body[f] || null;
+        else inv[f] = req.body[f];
+      });
+      await inv.save();
+      return res.json(inv);
+    }
+
+    // Yuborilgan — bir martalik cheklangan tahrir (faqat ism + soat)
+    if (inv.venueEditUsed) {
+      return res.status(403).json({ message: "Bu taklifnoma allaqachon bir marta tahrirlangan. Qo'shimcha o'zgartirish uchun bosh admin bilan bog'laning." });
+    }
+    const allowed = ["groomName", "brideName", "weddingTime"];
+    let changed = false;
+    allowed.forEach((f) => {
+      if (req.body[f] !== undefined && req.body[f] !== inv[f]) {
+        inv[f] = req.body[f];
+        changed = true;
+      }
     });
+    if (!changed) {
+      return res.status(400).json({ message: "Hech qanday o'zgarish kiritilmadi (faqat ism va soatni tahrirlash mumkin)." });
+    }
+    inv.venueEditUsed = true;
     await inv.save();
     res.json(inv);
   } catch (error) {
@@ -118,25 +160,14 @@ export const deleteInvitation = async (req, res) => {
 // GET /api/public/invitation/:id
 export const publicInvitation = async (req, res) => {
   try {
-    const inv = await Invitation.findById(req.params.id).select(
-      "groomName brideName weddingDate weddingTime venueName address mapLink images description template status"
-    );
+    const inv = await Invitation.findById(req.params.id)
+      .select(
+        "groomName brideName weddingDate weddingTime venueName address mapLink images description template design music status"
+      )
+      .populate("design", "key name preview html css")
+      .populate("music", "name url cover");
     if (!inv) return res.status(404).json({ message: "Topilmadi" });
     res.json(inv);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// ============ RSVP (mehmon javob beradi) ============
-// POST /api/public/invitation/:id/rsvp   { guests: 2 }
-export const submitRsvp = async (req, res) => {
-  try {
-    const inv = await Invitation.findById(req.params.id);
-    if (!inv) return res.status(404).json({ message: "Topilmadi" });
-    inv.rsvpGuests += Number(req.body.guests || 1);
-    await inv.save();
-    res.json({ message: "Rahmat! Javobingiz qabul qilindi" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
