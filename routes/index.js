@@ -3,6 +3,7 @@ import { login, getMe, telegramLogin } from "../controllers/authController.js";
 import {
   createVenue, getVenues, updateVenue, deleteVenue,
   getStats, getVenueBilling, markPaid, payMonth,
+  adjustManualDebt, deletePaidInvitations,
   getIncomingInvitations, acceptInvitation, rejectInvitation,
   getInvitationById, adminUpdateInvitation,
 } from "../controllers/adminController.js";
@@ -34,6 +35,8 @@ router.get("/admin/stats", protect, superAdminOnly, getStats);
 router.get("/admin/venues/:id/billing", protect, superAdminOnly, getVenueBilling);
 router.put("/admin/invitations/:id/pay", protect, superAdminOnly, markPaid);
 router.put("/admin/venues/:id/pay-month", protect, superAdminOnly, payMonth);
+router.put("/admin/venues/:id/adjust-debt", protect, superAdminOnly, adjustManualDebt);
+router.delete("/admin/venues/:id/paid-invitations", protect, superAdminOnly, deletePaidInvitations);
 // Real-time taklifnoma oqimi (inbox) + qabul qilish / rad etish + to'liq tahrir
 router.get("/admin/invitations", protect, superAdminOnly, getIncomingInvitations);
 router.get("/admin/invitations/:id", protect, superAdminOnly, getInvitationById);

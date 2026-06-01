@@ -15,6 +15,11 @@ const venueSchema = new mongoose.Schema(
     // telegramChatId — taklifnoma yuboriladigan chat (bot login orqali yoki admin panelda qo'lda ulanadi)
     telegramChatId: { type: String, default: "" },
     telegramUsername: { type: String, default: "" }, // kim ulagani (ixtiyoriy ko'rsatish uchun)
+
+    // Qo'lda qarz tuzatmasi (bosh admin "+ / −" tugmalari bilan o'zgartiradi).
+    // Umumiy qarz = (to'lanmagan taklifnomalar summasi) + manualDebt.
+    // Masalan to'yxona qisman to'lasa yoki kelishuv bo'lsa — shu yerda tuzatiladi.
+    manualDebt: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

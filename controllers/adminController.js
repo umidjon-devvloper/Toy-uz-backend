@@ -68,18 +68,28 @@ export const getVenues = async (req, res) => {
     const venues = await Venue.find().populate("admin", "login name status").sort("-createdAt");
 
     // Har bir to'yxona uchun yuborilgan taklifnomalar sonini va qarzini hisoblash
+    const now = new Date();
     const result = await Promise.all(
       venues.map(async (v) => {
         const sentCount = await Invitation.countDocuments({ venue: v._id, status: "sent" });
+        const finishedCount = await Invitation.countDocuments({
+          venue: v._id, status: "sent", weddingDate: { $lt: now },
+        });
         const unpaidAgg = await Invitation.aggregate([
           { $match: { venue: v._id, status: "sent", isPaid: false } },
-          { $group: { _id: null, debt: { $sum: "$priceSnapshot" } } },
+          { $group: { _id: null, debt: { $sum: "$priceSnapshot" }, count: { $sum: 1 } } },
         ]);
-        const debt = unpaidAgg[0]?.debt || 0;
+        const invoiceDebt = unpaidAgg[0]?.debt || 0;
+        const unpaidCount = unpaidAgg[0]?.count || 0;
+        const manualDebt = v.manualDebt || 0;
         return {
           ...v.toObject(),
           sentCount,
-          debt,
+          finishedCount,
+          unpaidCount,
+          invoiceDebt,      // taklifnomalardan kelib chiqqan qarz
+          manualDebt,       // qo'lda tuzatma
+          debt: invoiceDebt + manualDebt, // umumiy qarz
         };
       })
     );
@@ -142,19 +152,27 @@ export const deleteVenue = async (req, res) => {
 // GET /api/admin/stats
 export const getStats = async (req, res) => {
   try {
+    const now = new Date();
     const totalVenues = await Venue.countDocuments();
     const activeVenues = await Venue.countDocuments({ status: "active" });
+    const totalInvitations = await Invitation.countDocuments();
     const totalSent = await Invitation.countDocuments({ status: "sent" });
+    // Tugagan to'ylar — sanasi o'tib ketgan yuborilgan taklifnomalar
+    const finishedWeddings = await Invitation.countDocuments({ status: "sent", weddingDate: { $lt: now } });
     const totalGuestsAgg = await Invitation.aggregate([
       { $match: { status: "sent" } },
       { $group: { _id: null, guests: { $sum: "$rsvpGuests" } } },
     ]);
 
-    // Umumiy qarz (to'lanmagan)
+    // Umumiy qarz (to'lanmagan taklifnomalar + qo'lda tuzatmalar)
     const debtAgg = await Invitation.aggregate([
       { $match: { status: "sent", isPaid: false } },
       { $group: { _id: null, debt: { $sum: "$priceSnapshot" } } },
     ]);
+    const manualAgg = await Venue.aggregate([
+      { $group: { _id: null, m: { $sum: "$manualDebt" } } },
+    ]);
+    const manualDebtTotal = manualAgg[0]?.m || 0;
 
     // Oylik daromad grafigi (oxirgi 6 oy)
     const monthly = await Invitation.aggregate([
@@ -173,9 +191,13 @@ export const getStats = async (req, res) => {
     res.json({
       totalVenues,
       activeVenues,
+      totalInvitations,
       totalSent,
+      finishedWeddings,
       totalGuests: totalGuestsAgg[0]?.guests || 0,
-      totalDebt: debtAgg[0]?.debt || 0,
+      totalDebt: (debtAgg[0]?.debt || 0) + manualDebtTotal,
+      invoiceDebt: debtAgg[0]?.debt || 0,
+      manualDebtTotal,
       monthly,
     });
   } catch (error) {
@@ -241,6 +263,44 @@ export const payMonth = async (req, res) => {
       { isPaid: true }
     );
     res.json({ message: "Oy to'langan deb belgilandi", modified: r.modifiedCount });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ============ QO'LDA QARZ TUZATMASI (+ / −) ============
+// PUT /api/admin/venues/:id/adjust-debt   { delta }  yoki  { set }
+// delta — qarzga qo'shiladi (manfiy bo'lsa kamayadi); set — to'g'ridan-to'g'ri qiymat o'rnatadi.
+export const adjustManualDebt = async (req, res) => {
+  try {
+    const venue = await Venue.findById(req.params.id);
+    if (!venue) return res.status(404).json({ message: "To'yxona topilmadi" });
+
+    if (req.body.set !== undefined) {
+      venue.manualDebt = Number(req.body.set) || 0;
+    } else {
+      venue.manualDebt = (venue.manualDebt || 0) + (Number(req.body.delta) || 0);
+    }
+    await venue.save();
+    res.json({ message: "Qarz tuzatildi", manualDebt: venue.manualDebt });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ============ TO'LANGAN TAKLIFNOMALARNI O'CHIRISH (tozalash) ============
+// DELETE /api/admin/venues/:id/paid-invitations
+// To'yxona pulni to'lagach, to'langan taklifnomalarni bazadan o'chiramiz;
+// to'lanmaganlari (qarzdorlar) qoladi. Ixtiyoriy { year, month } bilan faqat shu oy.
+export const deletePaidInvitations = async (req, res) => {
+  try {
+    const filter = { venue: req.params.id, status: "sent", isPaid: true };
+    const { year, month } = req.body || {};
+    if (year && month) {
+      filter.sentAt = { $gte: new Date(year, month - 1, 1), $lt: new Date(year, month, 1) };
+    }
+    const r = await Invitation.deleteMany(filter);
+    res.json({ message: "To'langan taklifnomalar o'chirildi", deleted: r.deletedCount });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

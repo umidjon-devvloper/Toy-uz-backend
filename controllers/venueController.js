@@ -3,6 +3,37 @@ import Venue from "../models/Venue.js";
 import "../models/Design.js"; // populate("design")
 import "../models/Music.js"; // populate("music")
 import { emitToSuperAdmins } from "../config/socket.js";
+import { sendInvitationToTelegram } from "../services/telegramBot.js";
+
+// ============ YUBORISHNI YAKUNLASH (umumiy yordamchi) ============
+// Taklifnomani "yuborilgan + qabul qilingan" holatiga o'tkazadi, narxni muzlatadi,
+// bosh adminlarga real-time xabar beradi va Telegramga darhol yuboradi.
+// Bosh admin tasdig'i SHART EMAS — yuborilishi bilan avtomatik qabul qilinadi.
+async function finalizeSend(inv, venue) {
+  inv.status = "sent";
+  inv.sentAt = new Date();
+  inv.priceSnapshot = venue.pricePerInvitation;
+  inv.acceptStatus = "accepted"; // avtomatik qabul (super admin tasdig'i shart emas)
+  inv.acceptedAt = new Date();
+  inv.rejectReason = "";
+  await inv.save();
+
+  // 🔴 REAL-TIME: bosh adminlar panelida (oqim) darhol ko'rinadi
+  emitToSuperAdmins("invitation:incoming", {
+    invitation: inv.toObject(),
+    venue: { _id: venue._id, name: venue.name, phone: venue.phone, pricePerInvitation: venue.pricePerInvitation },
+    at: inv.sentAt,
+  });
+
+  // 📨 TELEGRAM: taklifnoma havola + rasm bilan to'yxona chatiga darhol boradi
+  let telegramSent = false;
+  try {
+    telegramSent = await sendInvitationToTelegram(venue, inv);
+  } catch (_) {
+    telegramSent = false;
+  }
+  return telegramSent;
+}
 
 // ============ TO'YXONA ADMIN DASHBOARD ============
 // GET /api/venue/stats
@@ -38,11 +69,15 @@ export const myInvitations = async (req, res) => {
   }
 };
 
-// ============ YANGI TAKLIFNOMA (qoralama) ============
+// ============ YANGI TAKLIFNOMA (yaratish + darhol yuborish) ============
 // POST /api/venue/invitations
+// Qoralama (draft) kerak emas — yaratilishi bilan DARHOL yuboriladi va hisobga olinadi.
+// (eski `send:false` parametri bilan hali ham qoralama saqlash mumkin, lekin standart — yuborish.)
 export const createInvitation = async (req, res) => {
   try {
+    const sendNow = req.body.send !== false; // standart: darhol yuborish
     const data = { ...req.body, venue: req.user.venue, createdBy: req.user._id, status: "draft" };
+    delete data.send;
     if (!data.design) delete data.design; // bo'sh string ObjectId cast xatosini oldini olish
     if (!data.music) delete data.music;
 
@@ -55,7 +90,13 @@ export const createInvitation = async (req, res) => {
     }
 
     const inv = await Invitation.create(data);
-    res.status(201).json(inv);
+
+    let telegramSent = false;
+    if (sendNow && venue) {
+      telegramSent = await finalizeSend(inv, venue);
+    }
+
+    res.status(201).json({ ...inv.toObject(), telegramSent });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -117,24 +158,11 @@ export const sendInvitation = async (req, res) => {
     if (inv.status === "sent") {
       return res.status(400).json({ message: "Allaqachon yuborilgan" });
     }
-    // Joriy to'yxona narxini "muzlatib" qo'yamiz
+    // Joriy to'yxona narxini "muzlatib" qo'yamiz va darhol yuboramiz (avto-qabul)
     const venue = await Venue.findById(req.user.venue);
-    inv.status = "sent";
-    inv.sentAt = new Date();
-    inv.priceSnapshot = venue.pricePerInvitation;
-    inv.acceptStatus = "pending"; // Super admin qabul qilishini kutadi
-    inv.acceptedAt = null;
-    inv.rejectReason = "";
-    await inv.save();
+    const telegramSent = await finalizeSend(inv, venue);
 
-    // 🔴 REAL-TIME: super adminlarga (bizga) darhol yetkazamiz
-    emitToSuperAdmins("invitation:incoming", {
-      invitation: inv.toObject(),
-      venue: { _id: venue._id, name: venue.name, phone: venue.phone, pricePerInvitation: venue.pricePerInvitation },
-      at: inv.sentAt,
-    });
-
-    res.json({ message: "Taklifnoma yuborildi va hisobga olindi", invitation: inv });
+    res.json({ message: "Taklifnoma yuborildi va hisobga olindi", invitation: inv, telegramSent });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
