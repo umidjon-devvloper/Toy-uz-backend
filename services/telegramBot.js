@@ -166,27 +166,13 @@ export const initBot = () => {
 export const getBot = () => bot;
 
 // ============ TASDIQLANGAN TAKLIFNOMANI TELEGRAMGA YUBORISH ============
-// Admin qabul qilganda chaqiriladi
+// Admin qabul qilganda chaqiriladi.
+// Faqat havolani yuboramiz — Telegram o'zi /i/:id sahifasidagi og:image / og:title
+// ni o'qib chiroyli preview (rasm + ism + sana) kartochkasini chiqaradi.
 export const sendInvitationToTelegram = async (venue, inv) => {
   try {
     if (!bot || !venue?.telegramChatId) return false;
-
-    const url = inviteUrl(inv._id);
-    const dateStr = new Date(inv.weddingDate).toLocaleDateString("uz-UZ");
-    const caption =
-      `✅ *Taklifnoma tasdiqlandi!*\n\n` +
-      `💍 ${inv.groomName} & ${inv.brideName}\n` +
-      `📅 ${dateStr} • ${inv.weddingTime}\n` +
-      (inv.venueName || inv.address ? `📍 ${inv.venueName || inv.address}\n` : "") +
-      (inv.description ? `\n📝 ${inv.description}\n` : "") +
-      `\n🔗 Taklifnoma havolasi:\n${url}`;
-
-    const photo = inv.images?.[0];
-    if (photo) {
-      await bot.sendPhoto(venue.telegramChatId, photo, { caption, parse_mode: "Markdown" });
-    } else {
-      await bot.sendMessage(venue.telegramChatId, caption, { parse_mode: "Markdown" });
-    }
+    await bot.sendMessage(venue.telegramChatId, inviteUrl(inv._id));
     return true;
   } catch (e) {
     console.error("Telegramga yuborishda xato:", e.message);

@@ -6,7 +6,7 @@ import connectDB from "./config/db.js";
 import routes from "./routes/index.js";
 import { initSocket } from "./config/socket.js";
 import { initBot } from "./services/telegramBot.js";
-import { sharePage } from "./controllers/shareController.js";
+import { sharePage, ogImage } from "./controllers/shareController.js";
 
 dotenv.config();
 connectDB();
@@ -38,6 +38,9 @@ app.use("/api", routes);
 
 // Telegram / SEO preview sahifasi (og:image, og:title) — odamlar SPA'ga yo'naltiriladi
 app.get("/i/:id", sharePage);
+
+// Generate qilingan og:image (to'yxona rasm yuklamaganda) — chiroyli taklifnoma PNG
+app.get("/og/:id.png", ogImage);
 
 // 404
 app.use((req, res) => res.status(404).json({ message: "Endpoint topilmadi" }));

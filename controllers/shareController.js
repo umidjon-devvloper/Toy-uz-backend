@@ -1,5 +1,17 @@
 import Invitation from "../models/Invitation.js";
 import "../models/Design.js"; // populate("design") uchun model ro'yxatdan o'tishi shart
+import { renderOgPng } from "../services/ogImage.js";
+
+// Backendning o'z bazaviy manzili (og rasm shu yerdan beriladi).
+// Tartib: SHARE_BASE_URL → Railway public domeni → so'rovning o'z hosti.
+const selfBase = (req) => {
+  const explicit = (process.env.SHARE_BASE_URL || "").trim().replace(/\/$/, "");
+  if (explicit) return explicit;
+  const railway = (process.env.RAILWAY_PUBLIC_DOMAIN || "").trim().replace(/^https?:\/\//, "").replace(/\/$/, "");
+  if (railway) return `https://${railway}`;
+  const proto = String(req.headers["x-forwarded-proto"] || req.protocol || "https").split(",")[0];
+  return `${proto}://${req.get("host")}`;
+};
 
 // HTML-escape (atribut/matn xavfsizligi uchun)
 const esc = (s = "") =>
@@ -39,14 +51,45 @@ export const sharePage = async (req, res) => {
       : "";
     const place = inv.venueName || inv.address || "";
     const description = [dateStr, inv.weddingTime, place].filter(Boolean).join(" • ");
-    // og:image — o'zi yuklagan rasm bo'lsa o'sha, bo'lmasa tanlangan dizayn preview'i
-    const image = inv.images?.[0] || inv.design?.preview || "";
+    // og:image — o'zi yuklagan rasm bo'lsa o'sha, bo'lmasa o'zimiz generate qiladigan
+    // chiroyli taklifnoma rasmi (ism + sana + to'yxona) /og/:id.png orqali beriladi.
+    const image = inv.images?.[0] || `${selfBase(req)}/og/${req.params.id}.png`;
 
     res
       .set("Content-Type", "text/html; charset=utf-8")
       .send(redirectHtml(target, title, "To'y taklifnomasi • TOY.UZ", description, target, image));
   } catch (error) {
     res.status(500).send("Xatolik");
+  }
+};
+
+// ============ GENERATE QILINGAN OG RASM ============
+// GET /og/:id.png — to'yxona rasm yuklamaganda, ism+sana+joy bilan chiroyli
+// 1200×630 PNG yasab beradi. Telegram/Facebook shu URL ni og:image qilib o'qiydi.
+export const ogImage = async (req, res) => {
+  try {
+    const inv = await Invitation.findById(req.params.id)
+      .select("groomName brideName weddingDate weddingTime venueName address design")
+      .populate("design", "key");
+
+    if (!inv) return res.status(404).end();
+
+    const png = renderOgPng({
+      id: String(inv._id),
+      groomName: inv.groomName,
+      brideName: inv.brideName,
+      weddingDate: inv.weddingDate,
+      weddingTime: inv.weddingTime,
+      venueName: inv.venueName,
+      address: inv.address,
+      designKey: inv.design?.key || "",
+    });
+
+    res.set("Content-Type", "image/png");
+    res.set("Cache-Control", "public, max-age=86400");
+    res.send(png);
+  } catch (error) {
+    res.status(500).end();
   }
 };
 
