@@ -64,11 +64,6 @@ const HTML = `
   </section>
 
   <section class="sec">
-    <div class="sec-t">Xotira lavhalari</div>
-    <div data-toy="gallery"></div>
-  </section>
-
-  <section class="sec">
     <div class="sec-t">To&#39;y manzili</div>
     <p class="addr">{{address}}</p>
     <div data-toy="map"></div>
