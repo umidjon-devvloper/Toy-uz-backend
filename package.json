@@ -19,6 +19,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.5.1",
     "node-telegram-bot-api": "^0.67.0",
+    "opentype.js": "^2.0.0",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {

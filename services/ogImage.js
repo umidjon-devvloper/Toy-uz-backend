@@ -2,23 +2,37 @@
 //  OG rasm generatori — to'yxona rasm YUKLAMAGANDA, ulashilgan
 //  havola previewi uchun chiroyli rasm (1200×630 PNG) yasaydi.
 //  Ism + sana + to'yxona nomi har taklifnomada o'zgaradi.
-//  Telegram/Facebook faqat raster (PNG) tushunadi — shuning uchun
-//  SVG ni @resvg/resvg-js bilan PNG ga aylantiramiz (font ichida).
+//
+//  MUHIM: matnni resvg'ning font rendereriga tashlamaymiz —
+//  uning o'rniga opentype.js bilan matnni VEKTOR <path> larga
+//  aylantiramiz. Sababi: @resvg/resvg-js'ning `fontBuffers` opsiyasi
+//  ba'zi serverlarda (Linux/Railway) matnni chizmaydi — natijada
+//  faqat ramka chiqib, ism/sana ko'rinmay qoladi. Vektor path esa
+//  font talab qilmaydi — har qanday platformada bir xil chiqadi.
 // ============================================================
 import { Resvg } from "@resvg/resvg-js";
+import opentype from "opentype.js";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const FONT_GV = join(__dirname, "../assets/fonts/GreatVibes-Regular.ttf");
-const FONT_EB = join(__dirname, "../assets/fonts/EBGaramond.ttf");
+const FONT_GV = join(__dirname, "../assets/fonts/GreatVibes-Regular.ttf"); // ism (script)
+const FONT_EB = join(__dirname, "../assets/fonts/EBGaramond.ttf"); // matn (serif)
 
-// Fontlarni bir marta o'qiymiz
-let fontBuffers = null;
-const fonts = () => {
-  if (!fontBuffers) fontBuffers = [readFileSync(FONT_GV), readFileSync(FONT_EB)];
-  return fontBuffers;
+// Buffer → aniq o'lchamli ArrayBuffer (Node bufferlari poollanishi mumkin)
+const toArrayBuffer = (buf) => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+
+// Fontlarni bir marta opentype bilan o'qiymiz
+let OT = null;
+const otFonts = () => {
+  if (!OT) {
+    OT = {
+      script: opentype.parse(toArrayBuffer(readFileSync(FONT_GV))),
+      serif: opentype.parse(toArrayBuffer(readFileSync(FONT_EB))),
+    };
+  }
+  return OT;
 };
 
 const UZ_MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentyabr", "oktyabr", "noyabr", "dekabr"];
@@ -28,8 +42,49 @@ const fmtDate = (d) => {
   return `${dt.getDate()}-${UZ_MONTHS[dt.getMonth()]}, ${dt.getFullYear()}`;
 };
 
-const esc = (s = "") =>
-  String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+// Path buyruqlarini ANIQ bo'shliqlar bilan seriyalashtiramiz.
+// (opentype'ning toPathData'si raqamlarni ajratuvchisiz qo'shadi — resvg
+//  buni chalkashtirib, matnni ko'zgu/artefaktga aylantiradi.)
+const rnd = (n) => Number(n.toFixed(2));
+function cmdsToD(cmds) {
+  let d = "";
+  for (const c of cmds) {
+    if (c.type === "M") d += `M ${rnd(c.x)} ${rnd(c.y)} `;
+    else if (c.type === "L") d += `L ${rnd(c.x)} ${rnd(c.y)} `;
+    else if (c.type === "C") d += `C ${rnd(c.x1)} ${rnd(c.y1)} ${rnd(c.x2)} ${rnd(c.y2)} ${rnd(c.x)} ${rnd(c.y)} `;
+    else if (c.type === "Q") d += `Q ${rnd(c.x1)} ${rnd(c.y1)} ${rnd(c.x)} ${rnd(c.y)} `;
+    else if (c.type === "Z") d += "Z ";
+  }
+  return d.trim();
+}
+
+// ---- Matnni markazlashtirilgan vektor <path> ga aylantiradi ----
+// spacing > 0 bo'lsa harf-orasi qo'shiladi (eyebrow / "VA" uchun).
+// skew (gradus) — faux kursiv (to'yxona nomi uchun).
+// Har belgini charToGlyph orqali olamiz — bu opentype'ning GSUB/bidi
+// feature dvigatelini chetlab o'tadi (ba'zi fontlarda u qo'llab-quvvatlanmaydi).
+function textPath({ font, text, size, cx, y, color, spacing = 0, skew = 0 }) {
+  const s = String(text || "");
+  if (!s) return "";
+  const scale = size / font.unitsPerEm;
+  const chars = [...s];
+  const glyphs = chars.map((ch) => font.charToGlyph(ch));
+  const adv = glyphs.map((g) => (g.advanceWidth || 0) * scale);
+  const total = adv.reduce((a, b) => a + b, 0) + spacing * Math.max(0, chars.length - 1);
+  let x = cx - total / 2;
+  // MUHIM: har glyph alohida <path> bo'lishi kerak — resvg bitta <path> ichidagi
+  // ko'p sonli subpath'ni to'liq render qilmaydi (matn yarmida kesilib qoladi).
+  let paths = "";
+  glyphs.forEach((g, i) => {
+    const d = cmdsToD(g.getPath(x, y, size).commands);
+    if (d) paths += `<path fill="${color}" d="${d}"/>`;
+    x += adv[i] + spacing;
+  });
+  // faux kursiv — matnni o'z bazaviy nuqtasi atrofida qiyalashtiramiz
+  return skew
+    ? `<g transform="translate(${cx} ${y}) skewX(${skew}) translate(${-cx} ${-y})">${paths}</g>`
+    : paths;
+}
 
 // 3 ta premium palitra (shablon)
 const PALETTES = {
@@ -60,12 +115,13 @@ const corner = (x, y, sx, sy, color) =>
   `<circle cx="${x + sx * 6}" cy="${y + sy * 6}" r="2.5" fill="${color}"/>`;
 
 function buildSvg(data, p) {
-  const groom = esc(data.groomName || "");
-  const bride = esc(data.brideName || "");
+  const { script, serif } = otFonts();
+  const groom = data.groomName || "";
+  const bride = data.brideName || "";
   const maxLen = Math.max(groom.length, bride.length, 1);
   const nameSize = Math.max(56, Math.min(104, Math.round(880 / maxLen)));
-  const dateLine = esc([fmtDate(data.weddingDate), data.weddingTime].filter(Boolean).join("  •  "));
-  const venue = esc(data.venueName || data.address || "");
+  const dateLine = [fmtDate(data.weddingDate), data.weddingTime].filter(Boolean).join("  •  ");
+  const venue = data.venueName || data.address || "";
 
   return `<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <defs>
@@ -82,20 +138,20 @@ function buildSvg(data, p) {
   ${corner(34, 596, 1, -1, p.accent)}
   ${corner(1166, 596, -1, -1, p.accent)}
 
-  <text x="600" y="138" text-anchor="middle" font-family="EB Garamond" font-size="27" letter-spacing="9" fill="${p.sub}">NIKOH TO'YI TAKLIFNOMASI</text>
+  ${textPath({ font: serif, text: "NIKOH TO'YI TAKLIFNOMASI", size: 27, cx: 600, y: 138, color: p.sub, spacing: 9 })}
   <g>
     <line x1="500" y1="170" x2="572" y2="170" stroke="${p.accent}" stroke-width="1.2"/>
     ${heart(600, 170, 1.5, p.accent)}
     <line x1="628" y1="170" x2="700" y2="170" stroke="${p.accent}" stroke-width="1.2"/>
   </g>
 
-  <text x="600" y="${290}" text-anchor="middle" font-family="Great Vibes" font-size="${nameSize}" fill="${p.heroInk}">${groom}</text>
-  <text x="600" y="${336}" text-anchor="middle" font-family="EB Garamond" font-size="24" letter-spacing="6" fill="${p.accent}">VA</text>
-  <text x="600" y="${410}" text-anchor="middle" font-family="Great Vibes" font-size="${nameSize}" fill="${p.heroInk}">${bride}</text>
+  ${textPath({ font: script, text: groom, size: nameSize, cx: 600, y: 290, color: p.heroInk })}
+  ${textPath({ font: serif, text: "VA", size: 24, cx: 600, y: 336, color: p.accent, spacing: 6 })}
+  ${textPath({ font: script, text: bride, size: nameSize, cx: 600, y: 410, color: p.heroInk })}
 
   <line x1="510" y1="450" x2="690" y2="450" stroke="${p.line}" stroke-width="1"/>
-  <text x="600" y="498" text-anchor="middle" font-family="EB Garamond" font-size="34" fill="${p.ink}">${dateLine}</text>
-  ${venue ? `<text x="600" y="546" text-anchor="middle" font-family="EB Garamond" font-style="italic" font-size="30" fill="${p.accentDark}">${venue}</text>` : ""}
+  ${textPath({ font: serif, text: dateLine, size: 34, cx: 600, y: 498, color: p.ink })}
+  ${venue ? textPath({ font: serif, text: venue, size: 30, cx: 600, y: 546, color: p.accentDark, skew: -10 }) : ""}
 </svg>`;
 }
 
@@ -111,10 +167,8 @@ export function renderOgPng(data) {
   if (cache.has(key)) return cache.get(key);
 
   const svg = buildSvg(data, p);
-  const png = new Resvg(svg, {
-    fitTo: { mode: "width", value: 1200 },
-    font: { fontBuffers: fonts(), loadSystemFonts: false, defaultFontFamily: "EB Garamond" },
-  }).render().asPng();
+  // Matn endi vektor path — font kerak emas, faqat shakllar chiziladi
+  const png = new Resvg(svg, { fitTo: { mode: "width", value: 1200 } }).render().asPng();
 
   if (cache.size > 300) cache.delete(cache.keys().next().value); // sodda LRU
   cache.set(key, png);
