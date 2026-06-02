@@ -83,7 +83,9 @@ const HTML = `
 
 // --- Mavzu (theme) asosida to'liq CSS yasaydi ---
 const buildCss = (t) => {
-  const namesCss = t.namesUpper ? `text-transform:uppercase;letter-spacing:.1em;` : ``;
+  const namesCss = t.namesUpper
+    ? `text-transform:uppercase;letter-spacing:.12em;`
+    : `letter-spacing:${t.namesSpacing || ".005em"};`;
   return `
 *{box-sizing:border-box}
 /* Scrollbarni yashirish (toza ko'rinish) */
@@ -125,14 +127,14 @@ body{background:${t.bg}}
 .cover{position:absolute;inset:0;background:${t.coverFallback};background-size:cover;background-position:center;}
 .veil{position:absolute;inset:0;background:${t.veil};}
 .hero-c{position:relative;z-index:3;animation:fu 1.1s ease both;max-width:560px;}
-.eyebrow{font-size:11px;letter-spacing:.5em;text-transform:uppercase;color:${t.heroSub};margin:0 0 22px;padding-left:.5em;}
-.names{margin:0;line-height:1.02;color:${t.heroInk};font-family:${t.names};font-weight:${t.namesWeight || 400};font-size:${t.namesSize};${namesCss}}
+.eyebrow{font-size:11px;font-weight:400;letter-spacing:.44em;text-transform:uppercase;color:${t.heroSub};margin:0 0 24px;padding-left:.44em;}
+.names{margin:0;line-height:1.06;color:${t.heroInk};font-family:${t.names};font-weight:${t.namesWeight || 400};font-size:${t.namesSize};text-shadow:0 2px 22px rgba(0,0,0,.18);${namesCss}}
 .names .n1,.names .n2{display:block;}
-.names .amp{display:block;font-family:${t.body};font-size:${t.ampSize || "15px"};letter-spacing:.35em;text-transform:uppercase;color:${t.accent};margin:${t.ampGap || ".06em 0"};}
+.names .amp{display:block;font-family:${t.body};font-weight:400;font-size:${t.ampSize || "13px"};letter-spacing:.42em;text-transform:uppercase;color:${t.accent};margin:${t.ampGap || ".16em 0"};opacity:.92;}
 .hr{display:flex;align-items:center;justify-content:center;gap:14px;color:${t.accent};margin:26px 0 4px;font-size:13px;}
 .hr span{display:block;height:1px;width:54px;background:linear-gradient(90deg,transparent,${t.accent});}
 .hr span:last-child{background:linear-gradient(270deg,transparent,${t.accent});}
-.date{font-family:${t.serif};font-size:26px;color:${t.heroInk};margin-top:14px;}
+.date{font-family:${t.serif};font-weight:500;font-size:27px;letter-spacing:.01em;color:${t.heroInk};margin-top:14px;}
 .time{font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:${t.heroSub};margin-top:8px;}
 .place{font-size:14px;color:${t.heroSub};margin-top:16px;}
 .cue{position:absolute;bottom:30px;left:50%;transform:translateX(-50%);z-index:3;}
@@ -173,15 +175,20 @@ body{background:${t.bg}}
 };
 
 // --- Umumiy sozlamalar (har mavzu ustidan yozadi) ---
+// Professional to'y tipografiyasi:
+//   names → Playfair Display (nafis, yuqori kontrastli serif)
+//   serif → Cormorant Garamond (matn/sarlavha)
+//   body  → Jost (toza geometrik sans — yorliq/harf oralig'i uchun)
 const base = {
-  body: "Inter,system-ui,sans-serif",
+  body: "'Jost',system-ui,sans-serif",
   serif: "'Cormorant Garamond',serif",
-  names: "'Great Vibes',cursive",
-  namesSize: "clamp(58px,17vw,94px)",
-  namesWeight: 400,
+  names: "'Playfair Display',serif",
+  namesSize: "clamp(44px,12.5vw,74px)",
+  namesWeight: 600,
   namesUpper: false,
-  ampSize: "15px",
-  ampGap: ".06em 0",
+  namesSpacing: ".005em",
+  ampSize: "13px",
+  ampGap: ".16em 0",
   onAccent: "#fff",
   shadow: "rgba(20,20,20,.18)",
 };
